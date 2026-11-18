@@ -1,0 +1,433 @@
+{
+  "name": "Daily AI Research Digest",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 11 * * *"
+            }
+          ]
+        }
+      },
+      "id": "5b2967ec-a21c-47f9-9de7-26d6108a2099",
+      "name": "Schedule Trigger1",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        736,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://export.arxiv.org/api/query",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "search_query",
+              "value": "cat:cs.AI"
+            },
+            {
+              "name": "sortBy",
+              "value": "submittedDate"
+            },
+            {
+              "name": "sortOrder",
+              "value": "descending"
+            },
+            {
+              "name": "start",
+              "value": "0"
+            },
+            {
+              "name": "max_results",
+              "value": "50"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "tderakhshande@gmail.com"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "9246b31c-5575-4958-9f9f-650673b85e51",
+      "name": "Fetch arXiv1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        928,
+        80
+      ],
+      "settings": {
+        "onError": "continueRegularOutput"
+      }
+    },
+    {
+      "parameters": {
+        "options": {
+          "explicitRoot": true
+        }
+      },
+      "id": "192f3569-7df9-4f9e-8513-460045fdb4c8",
+      "name": "XML to JSON arXiv1",
+      "type": "n8n-nodes-base.xml",
+      "typeVersion": 1,
+      "position": [
+        1088,
+        80
+      ],
+      "settings": {
+        "onError": "continueRegularOutput"
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://huggingface.co/api/daily_papers",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (compatible; ResearchDigest/1.0)"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "334d7976-7406-470c-870e-afa2d7f117a1",
+      "name": "Fetch HuggingFace1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1280,
+        80
+      ],
+      "settings": {
+        "onError": "continueRegularOutput"
+      },
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "url": "https://www.nature.com/nature.rss",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (compatible; ResearchDigest/1.0; +https://www.nature.com)"
+            },
+            {
+              "name": "Accept",
+              "value": "application/rss+xml, application/xml, text/xml, */*"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "56f4ec65-c2c3-47de-b4ec-58945293b551",
+      "name": "Fetch Nature1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1472,
+        80
+      ],
+      "settings": {
+        "onError": "continueRegularOutput"
+      },
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "options": {
+          "explicitRoot": true
+        }
+      },
+      "id": "e5414383-7783-4029-931b-55fb4cf9931f",
+      "name": "XML to JSON Nature1",
+      "type": "n8n-nodes-base.xml",
+      "typeVersion": 1,
+      "position": [
+        1632,
+        80
+      ],
+      "settings": {
+        "onError": "continueRegularOutput"
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "function getNodeData(nodeName) {\n  try {\n    return $(nodeName).all().map(i => i.json);\n  } catch (e) {\n    return [];\n  }\n}\n\nconst staticData = $getWorkflowStaticData('global');\nconst seen = new Set(Array.isArray(staticData.seenPaperIds) ? staticData.seenPaperIds : []);\n\nfunction clean(val) {\n  if (val == null) return '';\n  if (typeof val === 'string') return val;\n  if (typeof val === 'object') return val._ || val['#text'] || val.text || '';\n  return String(val).trim();\n}\n\nlet hfPapers = [];\nlet naturePapers = [];\nlet arxivPapers = [];\n\n// ۱. استخراج مقالات Hugging Face\nconst hfItems = getNodeData('Fetch HuggingFace1');\nfor (const item of hfItems) {\n  const p = item.paper || item;\n  const title = clean(p.title);\n  const summary = clean(p.summary || p.abstract);\n  const paperId = clean(p.id || item.id);\n  const url = paperId ? `https://huggingface.co/papers/${paperId}` : '';\n\n  if (title && url && !seen.has(url)) {\n    hfPapers.push({ source: 'Hugging Face', title, summary, url });\n  }\n}\n\n// ۲. استخراج مقالات Nature\nconst natureItems = getNodeData('XML to JSON Nature1');\nfor (const item of natureItems) {\n  const rdf = item['rdf:RDF'] || item;\n  const rawList = rdf.item || (rdf.channel && rdf.channel.item) || [];\n  const entries = Array.isArray(rawList) ? rawList : [rawList];\n\n  for (const entry of entries) {\n    const title = clean(entry.title);\n    const summary = clean(entry.description);\n    const url = clean(entry.link || entry['rdf:about']);\n\n    if (title && url && !seen.has(url)) {\n      naturePapers.push({ source: 'Nature', title, summary, url });\n    }\n  }\n}\n\n// ۳. استخراج مقالات arXiv\nconst arxivItems = getNodeData('XML to JSON arXiv1');\nfor (const item of arxivItems) {\n  const raw = item.feed?.entry;\n  const entries = Array.isArray(raw) ? raw : (raw ? [raw] : []);\n  for (const entry of entries) {\n    const title = clean(entry.title);\n    const summary = clean(entry.summary);\n    const url = clean(entry.id);\n\n    if (title && url && !seen.has(url)) {\n      arxivPapers.push({ source: 'arXiv', title, summary, url });\n    }\n  }\n}\n\n// انتخاب حداقل ۱ مقاله از هر منبع برای حفظ تنوع\nlet selected = [];\nif (hfPapers.length > 0) selected.push(hfPapers[0]);\nif (naturePapers.length > 0) selected.push(naturePapers[0]);\nif (arxivPapers.length > 0) selected.push(arxivPapers[0]);\n\n// تکمیل ظرفیت ۳ مقاله اگر مقاله‌ای باقی مانده بود\nconst remaining = [...hfPapers.slice(1), ...naturePapers.slice(1), ...arxivPapers.slice(1)];\nwhile (selected.length < 3 && remaining.length > 0) {\n  selected.push(remaining.shift());\n}\n\nif (!selected.length) {\n  return [{ json: { papers: [], ids: [], prompt: \"No new papers found.\" } }];\n}\n\n// پرامپت با رعایت دقیق بولد بودن عنوان مقاله و تمام سرفصل‌ها\nconst prompt = `You are a research digest generator. Summarize each paper below in English using ONLY the provided text.\n\nSTRICT FORMAT REQUIREMENT FOR EACH PAPER:\n📌 **[Paper Title]** *(Source: [Source Name])* \n- **Problem & Goal:** [1 concise sentence]\n- **Key Method / Innovation:** [1 concise sentence]\n- **Main Finding / Result:** [1 concise sentence]\n\nPapers to summarize:\n${selected.map((p, i) => `---\nSource Name: ${p.source}\nTitle: ${p.title}\nAbstract: ${p.summary}`).join('\\n\\n')}`;\n\nreturn [{ json: { papers: selected, ids: selected.map(p => p.url), prompt } }];\n"
+      },
+      "id": "30463a64-7d62-4e94-916b-cca4b3759252",
+      "name": "Prepare Digest1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Please summarize each item in the source-grounded structure requested below.\n\n{{ $json.prompt }}\n\nOutput ONLY the summaries. Do not add an introduction or conclusion.",
+        "options": {
+          "systemMessage": "You are a careful research assistant. Use only the supplied title and abstract/description. Do not invent facts, methods, results, or full-text claims. Clearly note when source text is sparse. Output fluent concise English."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1952,
+        32
+      ],
+      "id": "3f63a0f3-0998-4379-af85-cd6d22e13188",
+      "name": "AI Agent1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputData=$input.first()?.json||{};\nlet rawContent=inputData.output||inputData.text||inputData.choices?.[0]?.message?.content||'';\nif(typeof rawContent!=='string') rawContent=JSON.stringify(rawContent);\nif(!rawContent.trim()) throw new Error('AI summary output is empty');\nfunction esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;');}\nlet content=esc(rawContent.trim()).replace(/\\*\\*(.*?)\\*\\*/g,'<b>$1</b>');\nif(content.length>2600) content=content.slice(0,2600)+'…';\nconst metadata=$('Prepare Digest1').first().json;\nconst papers=metadata.papers||[], ids=metadata.ids||[];\nconst date=new Date().toISOString().slice(0,10);\nlet text=`<b>Daily AI Research Digest</b> · ${date}\\n\\n${content}\\n\\n<b>Paper links:</b>\\n`;\nfor(const p of papers){\n const url=String(p.url||'').trim();\n if(!/^https?:\\/\\//i.test(url)) continue;\n const line=`• <a href=\"${esc(url)}\">${esc(p.title||p.source||'Paper')}</a> — ${esc(p.source)}\\n`;\n if((text+line).length>3900) break;\n text+=line;\n}\nreturn [{json:{text,ids}}];"
+      },
+      "id": "dd3dc125-9cff-4724-bdcc-ada2f9f2368e",
+      "name": "Format Telegram1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "bd4446cb-8a07-480c-8004-bbb9c5b836ec",
+      "name": "Send Telegram1",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2384,
+        0
+      ],
+      "webhookId": "1f883d61-5a31-4372-b1ff-7e31a0787743",
+      "credentials": {
+        "telegramApi": {
+          "id": "AQMABDeUka8wvljL",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const ids=$('Format Telegram1').first().json.ids||[];\nconst store=$getWorkflowStaticData('global');\nconst current=Array.isArray(store.seenPaperIds)?store.seenPaperIds:[];\nstore.seenPaperIds=[...new Set([...current,...ids])].slice(-2000);\nreturn [{json:{marked:ids.length,totalRemembered:store.seenPaperIds.length}}];"
+      },
+      "id": "c04e5dc0-5e32-4bb7-9b41-df074c5be72c",
+      "name": "Mark Seen1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2528,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "model": "cohere/north-mini-code:free",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        1968,
+        320
+      ],
+      "id": "4bf0577a-cda9-4959-8826-0b03ffbfd843",
+      "name": "OpenRouter Chat Model1",
+      "credentials": {
+        "openRouterApi": {
+          "id": "ew5OmYOh7FXxhZ1u",
+          "name": "OpenRouter account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger1": {
+      "main": [
+        [
+          {
+            "node": "Fetch arXiv1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch arXiv1": {
+      "main": [
+        [
+          {
+            "node": "XML to JSON arXiv1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "XML to JSON arXiv1": {
+      "main": [
+        [
+          {
+            "node": "Fetch HuggingFace1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch HuggingFace1": {
+      "main": [
+        [
+          {
+            "node": "Fetch Nature1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Nature1": {
+      "main": [
+        [
+          {
+            "node": "XML to JSON Nature1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "XML to JSON Nature1": {
+      "main": [
+        [
+          {
+            "node": "Prepare Digest1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Digest1": {
+      "main": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent1": {
+      "main": [
+        [
+          {
+            "node": "Format Telegram1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Telegram1": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Telegram1": {
+      "main": [
+        [
+          {
+            "node": "Mark Seen1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "3711021b-07e8-49f2-b35a-141608316361",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3fade502b6432c160e2358e4da55bb2fc36ae3a63518bc137a36d4909f62913b"
+  },
+  "nodeGroups": [],
+  "id": "jJMyhTjPU6Qc4FK6",
+  "tags": []
+}
